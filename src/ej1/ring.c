@@ -4,27 +4,6 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
-/*Como warm up para este primer ejercicio, el objetivo es implementar un esquema
-de comunicación en forma de anillo para interconectar los procesos. En un esquema
-de anillo se da con al menos tres procesos están conectados formando un bucle
-cerrado. Cada proceso está comunicado exactamente con dos procesos: su
-predecesor y su sucesor. Recibe un mensaje del predecesor y lo envía al sucesor.
-En este caso, la comunicación se llevará a cabo a través de pipes, las cuales deben
-ser implementadas.
-
-Al inicio, alguno de los procesos del anillo recibirá un número entero como mensaje
-a transmitir. Este mensaje será enviado al siguiente proceso en el anillo, quien, tras
-recibirlo, lo incrementará en uno y luego lo enviará al siguiente proceso en el anillo.
-Este proceso continuará hasta que el proceso que inició la comunicación reciba, del
-último proceso, el resultado del mensaje inicialmente enviado.
-
-Se sugiere que el programa inicial cree un conjunto de procesos hijos, que deben
-ser organizados para formar un anillo. Por ejemplo, el hijo 1 recibe el mensaje, lo
-incrementa y lo envía al hijo 2. Este último lo incrementa nuevamente y lo pasa al
-hijo 3, y así sucesivamente, hasta llegar al último hijo, que incrementa el valor por
-última vez y lo envía de vuelta al proceso padre. Este último debe mostrar el
-resultado final del proceso de comunicación en la salida estándar.*/
-
 int main(int argc, char **argv)
 {	
 	int start, status, pid, n;
@@ -46,7 +25,7 @@ int main(int argc, char **argv)
 	for (i = 0; i < n; i++){
 		if (pipe(fd[i]) == -1){
 			perror("Error creating pipe");
-			exit(1);
+			exit(EXIT_FAILURE);
 		}
 	}
 
@@ -54,16 +33,63 @@ int main(int argc, char **argv)
 		pid = fork();
 		if (pid == -1){
 			perror("Error creating process");
-			exit(1);
+			exit(EXIT_FAILURE);
 		} else if (pid == 0) {
-            // Estamos en el proceso hijo
-            printf("Soy el proceso hijo %d con PID %d\n", i+1, getpid());
-            break; // Salimos del proceso hijo
+            // We are in the child process
+            //printf("Soy el proceso hijo %d con PID %d\n", i, getpid());
+            break;
         } else {
             // Estamos en el proceso padre
-            printf("Proceso padre creó al hijo %d con PID %d\n", i+1, pid);
+            //printf("Proceso padre creó al hijo %d con PID %d\n", i, pid);
+			continue;
 		}
 	}
 
+	if (pid == 0){
+		// We are in the child process
+		if (i == start){ // If it is the start process
+			if (write(fd[i][1], buffer, sizeof(buffer)) == -1){
+				perror("Error writing to pipe");
+				exit(EXIT_FAILURE);
+			}
+			
+			printf("Proceso %d recibió el mensaje %d desde el padre\n\n", i, buffer[0]);
+		}
+		if (read(fd[i][0], buffer, sizeof(buffer)) == -1){ // Check if there is an error reading from the pipe
+			perror("Error reading from pipe");
+			exit(EXIT_FAILURE);
+		}
+		
+		printf("Proceso %d recibió el mensaje %d\n", i, buffer[0]);
+
+		buffer[0]++;
+		
+		if (write(fd[(i+1)%n][1], buffer, sizeof(buffer)) == -1){ // Check if there is an error writing to the pipe
+			perror("Error writing to pipe");
+			exit(EXIT_FAILURE);
+		}
+		printf("Proceso %d envió el mensaje %d\n\n", i, buffer[0]);
+
+		// close all file descriptors
+		for (int j = 0; j < n; j++){
+			if (close(fd[j][0]) == -1){ perror("close"); exit(EXIT_FAILURE);}
+			if (close(fd[j][1]) == -1){ perror("close"); exit(EXIT_FAILURE);}
+		}
+	}
+	else {
+		// We are in the parent process
+		wait(&status);
+		if (read(fd[start][0], buffer, sizeof(buffer)) == -1){ // Check if there is an error reading from the pipe
+			perror("Error reading from pipe");
+			exit(EXIT_FAILURE);
+		}
+		// close all file descriptors
+		for (int j = 0; j < n; j++){
+			if (close(fd[j][0]) == -1){ perror("close"); exit(EXIT_FAILURE);}
+			if (close(fd[j][1]) == -1){ perror("close"); exit(EXIT_FAILURE);}
+		}
+		printf("El mensaje final es: %d\n", buffer[0]);
+	}
+	
 	return 0;
 }
